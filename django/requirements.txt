@@ -1,0 +1,11 @@
+################################
+# Required Python Packages
+# - Adjust as necessary
+################################
+
+django = 2.0.5
+django-cors-headers
+django-filter
+psycopg2
+gunicorn
+celery

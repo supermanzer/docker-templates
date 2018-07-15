@@ -1,0 +1,96 @@
+######################################################################
+# DOCKER-COMPOSE.YML - Defining the container configuration we will
+# utilize for the production level application.  The main difference
+# between this and our local development "docker-compose.yml" file is
+# that it relies upon the NGINX server while the dev version uses
+# the Django development server.
+######################################################################
+version: '3'
+
+services:
+    # First we will define the container for our Django application
+    django:
+        restart: always
+        build: ./django/ # This building process will ensure we build a
+                      # container with all the requirements we need.
+        command: ./run_web.sh
+        volumes:
+            - ./django/:/code
+            - /var/log/gunicorn
+        links:
+            - postgres:postgres
+            # - redis:redis
+        ports:
+            - "9000:9000"
+            - "8765:8765" # useful for using the django development server
+        expose:
+            - "9000"
+        env_file:
+            - .env
+        depends_on:
+            - postgres
+
+    worker:
+        restart: always
+        build:  ./django/
+        command: ./run_celery.sh
+        volumes:
+            - ./django:/code
+        links:
+            -db
+            -rabbitmq
+            -redis
+        depends_on:
+            - rabbitmq
+        env_file:
+            - .env
+
+
+    # Defining our NGINX Web Server container
+    nginx:
+        restart: always
+        build: ./nginx/ # We build this so we can create the log files
+                        # and esure we use the correct configuration.
+        volumes:
+            - ./django:/www
+            - /home/logs/
+        links:
+            - django:django
+        ports:
+            - "8000:80"
+
+    # # Defining our database server container.
+    postgres:
+        restart: always
+        image: postgres:latest # Getting the most up-to-date and cool postgres server instance.
+        volumes:
+            # By loading the SQL scripts we have stored in our postgres directory into the docker-entrypoint-initdb.d directory, Docker will run then (in alphabetical order) when we first build the image.
+            - ./postgres/:/docker-entrypoint-initdb.d/
+            - pg-data:/var/lib/postgresql/data
+        expose:
+            - "5432"
+        env_file:
+            - .env
+        ports:
+            - "5466:5432" # aboiding port collision with any Postgres server on the host
+
+# # Defining our Redis container, which we will use for caching and
+# # session storage.
+redis:
+    restart: always
+    image: redis:latest
+    expose:
+        - "6379"
+
+# # Eventually I want to use rabbitmq for my distributed task queueing processes along with Celery.  So let's just make that available now.
+rabbitmq:
+    image: rabbitmq:latest
+    restart: always
+    hostname: rabbitmq
+    ports:
+      - "15673:15672"
+
+# Mapping an external data volume to be mounted on the Docker network.  This will allow us to destroy and rebuild our Postgres server without loosing data.
+volumes:
+
+    pg-datavolume: {}
